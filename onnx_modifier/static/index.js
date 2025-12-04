@@ -315,6 +315,7 @@ host.BrowserHost = class {
         const deliminatorDeleteBtn = this.document.getElementById('deliminator-delete-btn');
         const deliminatorMoveBtn = this.document.getElementById('deliminator-move-btn');
         const deliminatorHighlightBtn = this.document.getElementById('deliminator-highlight-btn');
+        const deliminatorReplaceBtn = this.document.getElementById('deliminator-replace-btn');
         const deliminatorContextMenu = this.document.getElementById('deliminator-context-menu');
 
         // Delete handler
@@ -373,6 +374,24 @@ host.BrowserHost = class {
                     // Highlight the nodes
                     this._highlightNodes(result.deliminatorOps, 'deliminator-highlight');
                     this._highlightNodes(result.scopedOps, 'deliminator-scope-highlight');
+                }
+            }
+        });
+
+        // Replace handler - replace scoped region with Partition op
+        deliminatorReplaceBtn.addEventListener('click', () => {
+            const nodeName = deliminatorContextMenu.dataset.nodeName;
+            if (nodeName) {
+                // Get the func_name
+                const attrs = this._view.modifier.getDeliminatorOpAttributes(nodeName);
+                deliminatorContextMenu.style.display = 'none';
+
+                if (attrs && attrs.func_name) {
+                    // Clear any highlighting first
+                    this._clearScopeHighlighting();
+
+                    // Replace with Partition op
+                    this._view.modifier.replaceWithPartitionOp(attrs.func_name);
                 }
             }
         });

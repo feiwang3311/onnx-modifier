@@ -1100,8 +1100,19 @@ view.Node = class extends grapher.Node {
             const identifier = this.context.model && this.context.model.identifier ? this.context.model.identifier : '?';
             throw new view.Error("Unknown node type '" + JSON.stringify(type.name) + "' in '" + identifier + "'.");
         }
-        const content = this.context.view.options.names && (node.name || node.location) ? (node.name || node.location) : type.name.split('.').pop();
+        let content = this.context.view.options.names && (node.name || node.location) ? (node.name || node.location) : type.name.split('.').pop();
         const tooltip = this.context.view.options.names && (node.name || node.location) ? type.name : (node.name || node.location);
+
+        // For Partition ops, show the func_name in the display
+        if (type.name === 'Partition' && node.attributes) {
+            for (const attr of node.attributes) {
+                if (attr.name === 'func_name' && attr.value) {
+                    content = 'Partition: ' + attr.value;
+                    break;
+                }
+            }
+        }
+
         const title = header.add(null, styles, content, tooltip);
         title.on('click', () => this.context.view.showNodeProperties(node, null, this.modelNodeName));
         // Add right-click context menu for DeliminatorOp nodes

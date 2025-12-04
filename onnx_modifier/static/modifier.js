@@ -227,12 +227,14 @@ modifier.Modifier = class {
     findScopedOps(funcName) {
         const result = {
             deliminatorOps: [],  // All DeliminatorOps with this func_name
-            scopedOps: []        // Ops between begin and end delimiters
+            scopedOps: [],       // Ops between begin and end delimiters
+            beginDelims: [],     // is_begin = 1 delimiters
+            endDelims: []        // is_begin = 0 delimiters
         };
 
         // Find all DeliminatorOps with this func_name
-        const beginDelims = [];  // is_begin = 1
-        const endDelims = [];    // is_begin = 0
+        const beginDelims = result.beginDelims;  // is_begin = 1
+        const endDelims = result.endDelims;      // is_begin = 0
 
         for (const [nodeName, nodeInfo] of this.addedNode) {
             if (nodeInfo.properties && nodeInfo.properties.get('op_type') === 'DeliminatorOp') {
@@ -395,6 +397,125 @@ modifier.Modifier = class {
         }
 
         return result;
+    }
+
+    // Replace DeliminatorOps and scoped ops with a single Partition op
+    replaceWithPartitionOp(funcName) {
+        // Step 2: Use highlighting functionality to find all ops to replace
+        const scopeInfo = this.findScopedOps(funcName);
+        const allNodesToReplace = new Set([...scopeInfo.deliminatorOps, ...scopeInfo.scopedOps]);
+        const beginDelims = scopeInfo.beginDelims;
+        const endDelims = scopeInfo.endDelims;
+
+        console.log('=== Replace with Partition ===');
+        console.log('funcName:', funcName);
+        console.log('Begin delims:', beginDelims);
+        console.log('End delims:', endDelims);
+        console.log('Nodes to replace:', [...allNodesToReplace]);
+
+        if (allNodesToReplace.size === 0) {
+            console.log('No nodes found for func_name:', funcName);
+            return false;
+        }
+
+        // Step 3a: Get inputs of is_begin deliminator ops
+        const partitionInputs = [];
+        for (const delimName of beginDelims) {
+            const nodeInfo = this.addedNode.get(delimName);
+            if (nodeInfo && nodeInfo.inputs) {
+                for (const [inputName, args] of nodeInfo.inputs) {
+                    for (const arg of args) {
+                        partitionInputs.push(arg[0]);  // tensor name
+                    }
+                }
+            }
+        }
+        console.log('Partition inputs:', partitionInputs);
+
+        // Step 3b: Get outputs of !is_begin (end) deliminator ops
+        // These will be replaced by Partition's outputs
+        const endDelimOutputs = [];  // [{delimName, tensorName, origTensorName}]
+        for (const delimName of endDelims) {
+            const nodeInfo = this.addedNode.get(delimName);
+            if (nodeInfo && nodeInfo.outputs) {
+                for (const [outputName, args] of nodeInfo.outputs) {
+                    for (const arg of args) {
+                        endDelimOutputs.push({
+                            delimName: delimName,
+                            tensorName: arg[0]  // the output tensor of the end delim
+                        });
+                    }
+                }
+            }
+        }
+        console.log('End delim outputs:', endDelimOutputs);
+
+        // Step 1: Create the Partition op
+        const partitionNodeName = this.try_get_node_name('Partition');
+        const properties = new Map();
+        properties.set('domain', 'custom');
+        properties.set('op_type', 'Partition');
+        properties.set('name', partitionNodeName);
+
+        // Set func_name as an attribute
+        const nodeAttributes = new Map();
+        nodeAttributes.set('func_name', [funcName, 'string']);
+
+        // Set inputs - use 'X' to match schema expectation
+        // For now, use first input (if multiple begin delims, take first one)
+        const inputs = new Map();
+        if (partitionInputs.length > 0) {
+            inputs.set('X', [[partitionInputs[0], false]]);
+        }
+
+        // Set outputs - use 'Y' to match schema expectation
+        // For now, use first output (if multiple end delims, take first one)
+        const outputs = new Map();
+        const outputMapping = new Map();  // endDelimOutput -> partitionOutput
+        const partitionOutputName = partitionNodeName + '_output';
+        if (endDelimOutputs.length > 0) {
+            outputs.set('Y', [[partitionOutputName, false]]);
+            // Map all end delim outputs to this single partition output
+            for (const endOut of endDelimOutputs) {
+                outputMapping.set(endOut.tensorName, partitionOutputName);
+            }
+        }
+
+        // Create the node info
+        const nodeInfo = new view.LightNodeInfo(properties, nodeAttributes, inputs, outputs);
+        this.addedNode.set(partitionNodeName, nodeInfo);
+
+        console.log('Created Partition op:', partitionNodeName);
+        console.log('  Inputs:', [...inputs.entries()].map(([k,v]) => k + '=' + JSON.stringify(v)));
+        console.log('  Outputs:', [...outputs.entries()].map(([k,v]) => k + '=' + JSON.stringify(v)));
+        console.log('  Output mapping (endDelim output -> partition output):', [...outputMapping.entries()]);
+
+        // Step 3c: Update renameMap to redirect end delim outputs to Partition outputs
+        // Find all nodes that consume end delim outputs and update their renameMap
+        for (const [destNodeName, renameEntries] of this.renameMap) {
+            if (allNodesToReplace.has(destNodeName)) continue;
+            for (const [origName, newName] of renameEntries) {
+                if (outputMapping.has(newName)) {
+                    // This node was consuming an end delim output, redirect to Partition output
+                    const partitionOutput = outputMapping.get(newName);
+                    console.log('Redirecting renameMap[' + destNodeName + '][' + origName + ']: ' + newName + ' -> ' + partitionOutput);
+                    renameEntries.set(origName, partitionOutput);
+                }
+            }
+        }
+
+        // Step 4: Remove all highlighted ops
+        for (const nodeName of allNodesToReplace) {
+            if (this.addedNode.has(nodeName)) {
+                this.addedNode.delete(nodeName);
+            } else {
+                this.name2NodeStates.set(nodeName, 'Deleted');
+            }
+        }
+
+        // Refresh the view
+        this.applyAndUpdateView();
+        return true;
     }
 
     // Pattern-based deliminator insertion

@@ -699,6 +699,23 @@ onnx.Graph = class {
                     )
             }
         }
+        // Also add custom attributes from node_info that aren't in schema
+        if (node_info.attributes) {
+            const schemaAttrNames = new Set(schema.attributes ? schema.attributes.map(a => a.name) : []);
+            for (const [attrName, attrValueType] of node_info.attributes) {
+                if (!schemaAttrNames.has(attrName)) {
+                    // attrValueType is [value, type]
+                    attributes.push(
+                        new onnx.LightAttributeInfo(
+                            attrName,
+                            '',  // description
+                            attrValueType[1],  // type
+                            attrValueType[0]   // value
+                        )
+                    );
+                }
+            }
+        }
         // console.log(attributes)
         var custom_add_node = new onnx.Node(
                 this._context,
