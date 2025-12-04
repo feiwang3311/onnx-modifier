@@ -575,7 +575,16 @@ onnx.Graph = class {
 
     make_custom_added_node(node_info) {
         // type of node_info == LightNodeInfo
-        const schema = this._context.metadata.type(node_info.properties.get('op_type'), node_info.properties.get('domain'));
+        const schema = this._context.metadata.type(node_info.properties.get('op_type'), node_info.properties.get('domain')) || {
+            name: node_info.properties.get('op_type'),
+            module: node_info.properties.get('domain'),
+            inputs: [{ name: 'X', type: 'T' }],
+            outputs: [{ name: 'Y', type: 'T' }],
+            max_input: 1,
+            min_input: 1,
+            max_output: 1,
+            min_output: 1
+        };
         // console.log(schema)
 
         // console.log(node_info.attributes)
@@ -583,8 +592,8 @@ onnx.Graph = class {
         // console.log(node_info.outputs)
         // var max_input = schema.max_input
         // var min_input = schema.max_input
-        var max_custom_add_input_num = Math.min(schema.max_input, 8)  // set at most 8 custom_add inputs
-        var max_custom_add_output_num = Math.min(schema.max_output, 8)  // set at most 8 custom_add outputs
+        var max_custom_add_input_num = Math.min(schema.max_input || 8, 8)  // set at most 8 custom_add inputs
+        var max_custom_add_output_num = Math.min(schema.max_output || 8, 8)  // set at most 8 custom_add outputs
 
         // console.log(node_info)
         var inputs = []

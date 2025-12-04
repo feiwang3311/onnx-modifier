@@ -59,10 +59,16 @@ grapher.Graph = class {
             this._edges.set(key, { v: edge.v, w: edge.w, label: edge });
         }
 
+        // Store edge metadata for DeliminatorOp feature
+        var from_node_name = edge.from.modelNodeName;
+        var to_node_name = edge.to.modelNodeName;
+        // The edge.id is already set in view.js as 'edge-' + argument.name, so extract the tensor name from it
+        var tensorName = edge.id ? edge.id.replace('edge-', '') : '';
+        // Update the edge ID to include from/to node info while preserving tensor name
+        edge.id = 'edge_' + encodeURIComponent(from_node_name) + '_TO_' + encodeURIComponent(to_node_name) + '_TENSOR_' + encodeURIComponent(tensorName);
+
         // My code
         // _namedEdges: from : to
-        var from_node_name = edge.from.modelNodeName
-        var to_node_name = edge.to.modelNodeName
         // if (!this._namedEdges.has(from_node_name)) {
         //     this._namedEdges.set(from_node_name, []);
         // }

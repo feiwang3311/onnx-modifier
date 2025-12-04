@@ -293,6 +293,24 @@ host.BrowserHost = class {
             this._view._updateGraph();
         })
 
+        // DeliminatorOp mode toggle
+        this._deliminatorModeActive = false;
+        const deliminatorToggle = this.document.getElementById('deliminator-mode-toggle');
+        const deliminatorPanel = this.document.getElementById('deliminator-panel');
+
+        deliminatorToggle.addEventListener('click', () => {
+            this._deliminatorModeActive = !this._deliminatorModeActive;
+            if (this._deliminatorModeActive) {
+                deliminatorToggle.classList.add('active');
+                deliminatorPanel.style.display = 'block';
+                this._enableDeliminatorMode();
+            } else {
+                deliminatorToggle.classList.remove('active');
+                deliminatorPanel.style.display = 'none';
+                this._disableDeliminatorMode();
+            }
+        })
+
         this.document.getElementById('version').innerText = this.version;
 
         if (this._meta.file) {
@@ -884,6 +902,61 @@ host.BrowserHost = class {
                 }
             }
         }
+    }
+
+    _enableDeliminatorMode() {
+        // Add click handlers to all edge paths
+        const edgePaths = this.document.querySelectorAll('.edge-path');
+        edgePaths.forEach((edgePath) => {
+            edgePath.classList.add('deliminator-mode');
+            edgePath.style.pointerEvents = 'stroke';
+            edgePath._deliminatorClickHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this._handleEdgeClick(edgePath);
+            };
+            edgePath.addEventListener('click', edgePath._deliminatorClickHandler);
+        });
+    }
+
+    _disableDeliminatorMode() {
+        // Remove click handlers from all edge paths
+        const edgePaths = this.document.querySelectorAll('.edge-path');
+        edgePaths.forEach((edgePath) => {
+            edgePath.classList.remove('deliminator-mode');
+            if (edgePath._deliminatorClickHandler) {
+                edgePath.removeEventListener('click', edgePath._deliminatorClickHandler);
+                delete edgePath._deliminatorClickHandler;
+            }
+        });
+    }
+
+    _handleEdgeClick(edgePath) {
+        // Get edge info from the path's id attribute
+        const edgeId = edgePath.getAttribute('id');
+        if (!edgeId) {
+            console.error('Edge has no ID');
+            return;
+        }
+
+        // Get attributes from the panel
+        const isBegin = this.document.getElementById('deliminator-is-begin').value;
+        const funcName = this.document.getElementById('deliminator-func-name').value;
+        const schedulingConfig = this.document.getElementById('deliminator-scheduling-config').value;
+
+        // Call the modifier to add the DeliminatorOp
+        this._view.modifier.addDeliminatorOnEdge(edgeId, {
+            is_begin: parseInt(isBegin),
+            func_name: funcName,
+            scheduling_config: schedulingConfig
+        });
+
+        // Keep deliminator mode active so user can add more
+        // Re-enable click handlers on the new edges after graph update
+        setTimeout(() => {
+            this._disableDeliminatorMode();
+            this._enableDeliminatorMode();
+        }, 100);
     }
 };
 

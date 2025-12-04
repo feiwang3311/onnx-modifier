@@ -103,6 +103,75 @@ modifier.Modifier = class {
         this.applyAndUpdateView();
     }
 
+    // Add a DeliminatorOp on an edge (between two nodes)
+    addDeliminatorOnEdge(edgeId, attributes) {
+        // Parse the edge ID: edge_<fromNode>_TO_<toNode>_TENSOR_<tensorName>
+        const match = edgeId.match(/^edge_(.+)_TO_(.+)_TENSOR_(.*)$/);
+        if (!match) {
+            console.error('Invalid edge ID format:', edgeId);
+            return;
+        }
+
+        const fromNodeName = decodeURIComponent(match[1]);
+        const toNodeName = decodeURIComponent(match[2]);
+        const tensorName = decodeURIComponent(match[3]);
+
+        // Create the DeliminatorOp node
+        var modelNodeName = this.try_get_node_name('DeliminatorOp');
+        var properties = new Map();
+        properties.set('domain', 'custom');
+        properties.set('op_type', 'DeliminatorOp');
+        properties.set('name', modelNodeName);
+
+        // Set attributes
+        var nodeAttributes = new Map();
+        nodeAttributes.set('is_begin', [attributes.is_begin.toString(), 'int64']);
+        nodeAttributes.set('func_name', [attributes.func_name, 'string']);
+        nodeAttributes.set('scheduling_config', [attributes.scheduling_config, 'string']);
+
+        // Create unique output tensor name for the DeliminatorOp
+        var deliminatorOutputName = modelNodeName + '_output';
+
+        // Set inputs - the DeliminatorOp takes the original tensor as input
+        var inputs = new Map();
+        inputs.set('X', [[tensorName, false]]);  // [name, is_optional]
+
+        // Set outputs - the DeliminatorOp produces a new tensor
+        var outputs = new Map();
+        outputs.set('Y', [[deliminatorOutputName, false]]);
+
+        // Create the node info
+        var nodeInfo = new view.LightNodeInfo(properties, nodeAttributes, inputs, outputs);
+        this.addedNode.set(modelNodeName, nodeInfo);
+
+        // Now we need to update the destination node to use the DeliminatorOp's output
+        // instead of the original tensor
+        // Find which input of the destination node uses this tensor and rename it
+        var destNode = this.name2ModelNode.get(toNodeName);
+
+        if (destNode && destNode.inputs) {
+            for (var input of destNode.inputs) {
+                var found = false;
+                for (var i = 0; i < input.arguments.length; i++) {
+                    var arg = input.arguments[i];
+                    if (arg.name === tensorName || arg.original_name === tensorName) {
+                        // This is the input we need to rename
+                        var orig_arg_name = arg.original_name || arg.name;
+                        if (!this.renameMap.get(toNodeName)) {
+                            this.renameMap.set(toNodeName, new Map());
+                        }
+                        this.renameMap.get(toNodeName).set(orig_arg_name, deliminatorOutputName);
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+        }
+
+        this.applyAndUpdateView();
+    }
+
     addModelOutput(node_name) {
         var modelNode = this.name2ModelNode.get(node_name);
         // use a output argument as a proxy
