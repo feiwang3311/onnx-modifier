@@ -177,9 +177,11 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .edge-path.deliminator-mode {
     cursor: crosshair;
     pointer-events: stroke;
+    stroke-width: 3px !important;
 }
 .edge-path.deliminator-mode:hover {
     stroke: #FF6600 !important;
+    stroke-width: 5px !important;
 }
 #deliminator-context-menu {
     display: none;
@@ -787,6 +789,7 @@ warning_msg::before {
 
 <!-- Context menu for DeliminatorOp nodes -->
 <div id="deliminator-context-menu">
+    <div class="menu-item" id="deliminator-move-btn">Move</div>
     <div class="menu-item delete" id="deliminator-delete-btn">Delete</div>
 </div>
 

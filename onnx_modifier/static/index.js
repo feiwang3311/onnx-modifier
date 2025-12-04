@@ -311,14 +311,46 @@ host.BrowserHost = class {
             }
         })
 
-        // DeliminatorOp context menu delete handler
+        // DeliminatorOp context menu handlers
         const deliminatorDeleteBtn = this.document.getElementById('deliminator-delete-btn');
+        const deliminatorMoveBtn = this.document.getElementById('deliminator-move-btn');
         const deliminatorContextMenu = this.document.getElementById('deliminator-context-menu');
+
+        // Delete handler
         deliminatorDeleteBtn.addEventListener('click', () => {
             const nodeName = deliminatorContextMenu.dataset.nodeName;
             if (nodeName) {
                 this._view.modifier.deleteDeliminatorOp(nodeName);
                 deliminatorContextMenu.style.display = 'none';
+            }
+        });
+
+        // Move handler - delete and enable panel with same attributes
+        deliminatorMoveBtn.addEventListener('click', () => {
+            const nodeName = deliminatorContextMenu.dataset.nodeName;
+            if (nodeName) {
+                // Get the attributes before deleting
+                const attrs = this._view.modifier.getDeliminatorOpAttributes(nodeName);
+
+                // Delete the node (this will re-render the graph)
+                this._view.modifier.deleteDeliminatorOp(nodeName);
+                deliminatorContextMenu.style.display = 'none';
+
+                // Pre-fill the panel with the attributes
+                if (attrs) {
+                    this.document.getElementById('deliminator-is-begin').value = attrs.is_begin || '0';
+                    this.document.getElementById('deliminator-func-name').value = attrs.func_name || '';
+                    this.document.getElementById('deliminator-scheduling-config').value = attrs.scheduling_config || '';
+                }
+
+                // Enable deliminator mode after graph re-renders
+                // Use setTimeout to wait for the new edge paths to be created
+                setTimeout(() => {
+                    this._deliminatorModeActive = true;
+                    deliminatorToggle.classList.add('active');
+                    deliminatorPanel.style.display = 'block';
+                    this._enableDeliminatorMode();
+                }, 100);
             }
         });
 

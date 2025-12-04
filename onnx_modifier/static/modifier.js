@@ -208,6 +208,21 @@ modifier.Modifier = class {
         return true;
     }
 
+    // Get DeliminatorOp attributes for move feature
+    getDeliminatorOpAttributes(nodeName) {
+        const nodeInfo = this.addedNode.get(nodeName);
+        if (!nodeInfo || !nodeInfo.attributes) {
+            return null;
+        }
+
+        const attrs = {};
+        for (const [name, value] of nodeInfo.attributes) {
+            // value is [valueString, type]
+            attrs[name] = value[0];
+        }
+        return attrs;
+    }
+
     // Pattern-based deliminator insertion
     applyPatterns(patterns) {
         let totalDelimitorsAdded = 0;
