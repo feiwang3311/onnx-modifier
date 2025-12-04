@@ -614,6 +614,53 @@ modifier.Modifier = class {
         return nodeInfo && nodeInfo.properties && nodeInfo.properties.get('op_type') === 'Partition';
     }
 
+    // Shrink all DeliminatorOp regions into Partition ops
+    shrinkAll() {
+        // Collect all unique func_names from DeliminatorOps
+        const funcNames = new Set();
+        for (const [nodeName, nodeInfo] of this.addedNode) {
+            if (nodeInfo.properties && nodeInfo.properties.get('op_type') === 'DeliminatorOp') {
+                const funcName = nodeInfo.attributes.get('func_name');
+                if (funcName) {
+                    funcNames.add(funcName[0]);  // funcName is [value, type]
+                }
+            }
+        }
+
+        console.log('=== Shrink All ===');
+        console.log('Found func_names:', Array.from(funcNames));
+
+        // Shrink each func_name region
+        for (const funcName of funcNames) {
+            console.log('Shrinking region:', funcName);
+            this.replaceWithPartitionOp(funcName);
+        }
+
+        console.log('Shrink All completed');
+    }
+
+    // Expand all Partition ops back to DeliminatorOps
+    expandAll() {
+        // Collect all Partition op names
+        const partitionNames = [];
+        for (const [nodeName, nodeInfo] of this.addedNode) {
+            if (nodeInfo.properties && nodeInfo.properties.get('op_type') === 'Partition') {
+                partitionNames.push(nodeName);
+            }
+        }
+
+        console.log('=== Expand All ===');
+        console.log('Found Partition ops:', partitionNames);
+
+        // Expand each Partition op
+        for (const partitionName of partitionNames) {
+            console.log('Expanding Partition:', partitionName);
+            this.revertPartitionOp(partitionName);
+        }
+
+        console.log('Expand All completed');
+    }
+
     // Pattern-based deliminator insertion
     applyPatterns(patterns) {
         let totalDelimitorsAdded = 0;

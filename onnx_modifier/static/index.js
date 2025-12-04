@@ -411,6 +411,39 @@ host.BrowserHost = class {
             });
         }
 
+        // Partition panel toggle handler
+        const partitionToggle = this.document.getElementById('partition-mode-toggle');
+        const partitionPanel = this.document.getElementById('partition-panel');
+
+        if (partitionToggle && partitionPanel) {
+            partitionToggle.addEventListener('click', () => {
+                const isVisible = partitionPanel.style.display !== 'none';
+                if (isVisible) {
+                    partitionToggle.classList.remove('active');
+                    partitionPanel.style.display = 'none';
+                } else {
+                    partitionToggle.classList.add('active');
+                    partitionPanel.style.display = 'block';
+                }
+            });
+        }
+
+        // Shrink All and Expand All button handlers
+        const shrinkAllBtn = this.document.getElementById('shrink-all-btn');
+        const expandAllBtn = this.document.getElementById('expand-all-btn');
+
+        if (shrinkAllBtn) {
+            shrinkAllBtn.addEventListener('click', () => {
+                this._view.modifier.shrinkAll();
+            });
+        }
+
+        if (expandAllBtn) {
+            expandAllBtn.addEventListener('click', () => {
+                this._view.modifier.expandAll();
+            });
+        }
+
         // Pattern-based deliminator feature
         this._loadedPatterns = [];
         this._patternsLoaded = false;
