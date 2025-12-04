@@ -19,6 +19,7 @@ modifier.Modifier = class {
         this.renameMap = new Map();
         this.reBatchInfo = new Map();
         this.changedInputInfo = new Map();
+        this.partitionRevertInfo = new Map();  // Stores original state for Partition ops
 
         this.downloadWithShapeInf = false;
         this.downloadWithCleanUp = false;
@@ -418,6 +419,29 @@ modifier.Modifier = class {
             return false;
         }
 
+        // Save state for revert - store DeliminatorOp node infos
+        const savedAddedNodes = new Map();
+        for (const nodeName of scopeInfo.deliminatorOps) {
+            const nodeInfo = this.addedNode.get(nodeName);
+            if (nodeInfo) {
+                // Deep copy the nodeInfo
+                savedAddedNodes.set(nodeName, {
+                    properties: new Map(nodeInfo.properties),
+                    attributes: new Map(nodeInfo.attributes),
+                    inputs: new Map(nodeInfo.inputs),
+                    outputs: new Map(nodeInfo.outputs)
+                });
+            }
+        }
+
+        // Save the scoped ops (existing graph nodes that will be marked as Deleted)
+        const savedDeletedOps = [];
+        for (const nodeName of scopeInfo.scopedOps) {
+            if (!this.addedNode.has(nodeName)) {
+                savedDeletedOps.push(nodeName);
+            }
+        }
+
         // Step 3a: Get inputs of is_begin deliminator ops
         const partitionInputs = [];
         for (const delimName of beginDelims) {
@@ -492,10 +516,18 @@ modifier.Modifier = class {
 
         // Step 3c: Update renameMap to redirect end delim outputs to Partition outputs
         // Find all nodes that consume end delim outputs and update their renameMap
+        // Also save original renameMap values for revert
+        const savedRenameMapChanges = new Map();  // destNodeName -> Map(origName -> oldNewName)
         for (const [destNodeName, renameEntries] of this.renameMap) {
             if (allNodesToReplace.has(destNodeName)) continue;
             for (const [origName, newName] of renameEntries) {
                 if (outputMapping.has(newName)) {
+                    // Save original value for revert
+                    if (!savedRenameMapChanges.has(destNodeName)) {
+                        savedRenameMapChanges.set(destNodeName, new Map());
+                    }
+                    savedRenameMapChanges.get(destNodeName).set(origName, newName);
+
                     // This node was consuming an end delim output, redirect to Partition output
                     const partitionOutput = outputMapping.get(newName);
                     console.log('Redirecting renameMap[' + destNodeName + '][' + origName + ']: ' + newName + ' -> ' + partitionOutput);
@@ -513,9 +545,73 @@ modifier.Modifier = class {
             }
         }
 
+        // Save revert info for this Partition op
+        this.partitionRevertInfo.set(partitionNodeName, {
+            funcName: funcName,
+            savedAddedNodes: savedAddedNodes,
+            savedDeletedOps: savedDeletedOps,
+            savedRenameMapChanges: savedRenameMapChanges
+        });
+
         // Refresh the view
         this.applyAndUpdateView();
         return true;
+    }
+
+    // Revert a Partition op back to the original DeliminatorOps and scoped ops
+    revertPartitionOp(partitionNodeName) {
+        const revertInfo = this.partitionRevertInfo.get(partitionNodeName);
+        if (!revertInfo) {
+            console.log('No revert info found for Partition:', partitionNodeName);
+            return false;
+        }
+
+        console.log('=== Revert Partition ===');
+        console.log('Partition node:', partitionNodeName);
+        console.log('func_name:', revertInfo.funcName);
+
+        // Step 1: Restore the DeliminatorOps to addedNode
+        for (const [nodeName, savedInfo] of revertInfo.savedAddedNodes) {
+            const nodeInfo = new view.LightNodeInfo(
+                savedInfo.properties,
+                savedInfo.attributes,
+                savedInfo.inputs,
+                savedInfo.outputs
+            );
+            this.addedNode.set(nodeName, nodeInfo);
+            console.log('Restored DeliminatorOp:', nodeName);
+        }
+
+        // Step 2: Restore scoped ops (remove 'Deleted' state)
+        for (const nodeName of revertInfo.savedDeletedOps) {
+            this.name2NodeStates.delete(nodeName);
+            console.log('Restored scoped op:', nodeName);
+        }
+
+        // Step 3: Restore original renameMap entries
+        for (const [destNodeName, changes] of revertInfo.savedRenameMapChanges) {
+            const renameEntries = this.renameMap.get(destNodeName);
+            if (renameEntries) {
+                for (const [origName, oldNewName] of changes) {
+                    renameEntries.set(origName, oldNewName);
+                    console.log('Restored renameMap[' + destNodeName + '][' + origName + '] = ' + oldNewName);
+                }
+            }
+        }
+
+        // Step 4: Remove the Partition op
+        this.addedNode.delete(partitionNodeName);
+        this.partitionRevertInfo.delete(partitionNodeName);
+
+        // Refresh the view
+        this.applyAndUpdateView();
+        return true;
+    }
+
+    // Check if a node is a Partition op
+    isPartitionOp(nodeName) {
+        const nodeInfo = this.addedNode.get(nodeName);
+        return nodeInfo && nodeInfo.properties && nodeInfo.properties.get('op_type') === 'Partition';
     }
 
     // Pattern-based deliminator insertion

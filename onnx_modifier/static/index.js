@@ -396,6 +396,21 @@ host.BrowserHost = class {
             }
         });
 
+        // Partition context menu handlers
+        const partitionRevertBtn = this.document.getElementById('partition-revert-btn');
+        const partitionContextMenu = this.document.getElementById('partition-context-menu');
+
+        // Revert handler - revert Partition op back to original DeliminatorOps and scoped ops
+        if (partitionRevertBtn && partitionContextMenu) {
+            partitionRevertBtn.addEventListener('click', () => {
+                const nodeName = partitionContextMenu.dataset.nodeName;
+                if (nodeName) {
+                    partitionContextMenu.style.display = 'none';
+                    this._view.modifier.revertPartitionOp(nodeName);
+                }
+            });
+        }
+
         // Pattern-based deliminator feature
         this._loadedPatterns = [];
         this._patternsLoaded = false;

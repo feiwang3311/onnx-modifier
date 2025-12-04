@@ -863,6 +863,37 @@ view.View = class {
         }, 0);
     }
 
+    showPartitionContextMenu(event, modelNodeName) {
+        // Try both document references
+        let contextMenu = this._host.document.getElementById('partition-context-menu');
+        if (!contextMenu) {
+            contextMenu = document.getElementById('partition-context-menu');
+        }
+        if (!contextMenu) {
+            console.log('No partition context menu found!');
+            return;
+        }
+
+        // Position the menu at the mouse location
+        contextMenu.style.display = 'block';
+        contextMenu.style.left = event.clientX + 'px';
+        contextMenu.style.top = event.clientY + 'px';
+
+        // Store the node name for the revert action
+        contextMenu.dataset.nodeName = modelNodeName;
+
+        // Close menu when clicking elsewhere
+        const closeMenu = (e) => {
+            if (!contextMenu.contains(e.target)) {
+                contextMenu.style.display = 'none';
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('click', closeMenu);
+        }, 0);
+    }
+
     showDocumentation(type) {
         if (type && (type.description || type.inputs || type.outputs || type.attributes)) {
             if (type.nodes && type.nodes.length > 0) {
@@ -1119,6 +1150,12 @@ view.Node = class extends grapher.Node {
         if (type.name === 'DeliminatorOp') {
             title.on('contextmenu', (entry, event) => {
                 this.context.view.showDeliminatorContextMenu(event, this.modelNodeName);
+            });
+        }
+        // Add right-click context menu for Partition nodes
+        else if (type.name === 'Partition') {
+            title.on('contextmenu', (entry, event) => {
+                this.context.view.showPartitionContextMenu(event, this.modelNodeName);
             });
         }
         if (node.type.nodes && node.type.nodes.length > 0) {
