@@ -1002,9 +1002,20 @@ modifier.Modifier = class {
         nodeAttributes.set('func_name', [funcName, 'string']);
         nodeAttributes.set('scheduling_config', [schedulingConfig, 'string']);
 
+        // Check if the destination node already has a rename mapping for this tensor.
+        // If so, we need to chain through the existing delimiter by using the
+        // remapped tensor name as our input.
+        var actualInputTensor = tensorName;
+        if (this.renameMap.has(toNodeName)) {
+            const nodeRenames = this.renameMap.get(toNodeName);
+            if (nodeRenames.has(tensorName)) {
+                actualInputTensor = nodeRenames.get(tensorName);
+            }
+        }
+
         var deliminatorOutputName = modelNodeName + '_output';
         var inputs = new Map();
-        inputs.set('X', [[tensorName, false]]);
+        inputs.set('X', [[actualInputTensor, false]]);
         var outputs = new Map();
         outputs.set('Y', [[deliminatorOutputName, false]]);
 
