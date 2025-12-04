@@ -223,6 +223,180 @@ modifier.Modifier = class {
         return attrs;
     }
 
+    // Find all DeliminatorOps and scoped ops for a given func_name
+    findScopedOps(funcName) {
+        const result = {
+            deliminatorOps: [],  // All DeliminatorOps with this func_name
+            scopedOps: []        // Ops between begin and end delimiters
+        };
+
+        // Find all DeliminatorOps with this func_name
+        const beginDelims = [];  // is_begin = 1
+        const endDelims = [];    // is_begin = 0
+
+        for (const [nodeName, nodeInfo] of this.addedNode) {
+            if (nodeInfo.properties && nodeInfo.properties.get('op_type') === 'DeliminatorOp') {
+                const attrs = this.getDeliminatorOpAttributes(nodeName);
+                if (attrs && attrs.func_name === funcName) {
+                    result.deliminatorOps.push(nodeName);
+                    if (attrs.is_begin === '1') {
+                        beginDelims.push(nodeName);
+                    } else {
+                        endDelims.push(nodeName);
+                    }
+                }
+            }
+        }
+
+        // Build adjacency maps for the graph
+        // We need to find nodes that are downstream of beginDelims and upstream of endDelims
+        const nodeOutputs = new Map();  // nodeName -> [downstream node names]
+        const nodeInputs = new Map();   // nodeName -> [upstream node names]
+
+        // Process existing graph nodes
+        for (const node of this.graph._nodes) {
+            const nodeName = node.modelNodeName || node.name;
+            if (!nodeOutputs.has(nodeName)) nodeOutputs.set(nodeName, []);
+            if (!nodeInputs.has(nodeName)) nodeInputs.set(nodeName, []);
+
+            // Get output tensor names
+            const outputTensors = new Set();
+            if (node.outputs) {
+                for (const output of node.outputs) {
+                    for (const arg of output.arguments) {
+                        outputTensors.add(arg.name);
+                    }
+                }
+            }
+
+            // Find downstream nodes (nodes that consume this node's outputs)
+            for (const otherNode of this.graph._nodes) {
+                const otherName = otherNode.modelNodeName || otherNode.name;
+                if (otherName === nodeName) continue;
+                if (otherNode.inputs) {
+                    for (const input of otherNode.inputs) {
+                        for (const arg of input.arguments) {
+                            if (outputTensors.has(arg.name) || outputTensors.has(arg.original_name)) {
+                                if (!nodeOutputs.get(nodeName).includes(otherName)) {
+                                    nodeOutputs.get(nodeName).push(otherName);
+                                }
+                                if (!nodeInputs.has(otherName)) nodeInputs.set(otherName, []);
+                                if (!nodeInputs.get(otherName).includes(nodeName)) {
+                                    nodeInputs.get(otherName).push(nodeName);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also consider added nodes (DeliminatorOps)
+        for (const [addedName, nodeInfo] of this.addedNode) {
+            if (!nodeOutputs.has(addedName)) nodeOutputs.set(addedName, []);
+            if (!nodeInputs.has(addedName)) nodeInputs.set(addedName, []);
+
+            // Get input tensor name
+            let inputTensor = null;
+            if (nodeInfo.inputs) {
+                for (const [inputName, args] of nodeInfo.inputs) {
+                    if (args && args.length > 0) {
+                        inputTensor = args[0][0];  // [[tensorName, isOptional]]
+                    }
+                }
+            }
+
+            // Get output tensor name
+            let outputTensor = null;
+            if (nodeInfo.outputs) {
+                for (const [outputName, args] of nodeInfo.outputs) {
+                    if (args && args.length > 0) {
+                        outputTensor = args[0][0];
+                    }
+                }
+            }
+
+            // Find upstream node (who produces inputTensor)
+            if (inputTensor) {
+                for (const node of this.graph._nodes) {
+                    const nodeName = node.modelNodeName || node.name;
+                    if (node.outputs) {
+                        for (const output of node.outputs) {
+                            for (const arg of output.arguments) {
+                                if (arg.name === inputTensor || arg.original_name === inputTensor) {
+                                    if (!nodeInputs.get(addedName).includes(nodeName)) {
+                                        nodeInputs.get(addedName).push(nodeName);
+                                    }
+                                    if (!nodeOutputs.has(nodeName)) nodeOutputs.set(nodeName, []);
+                                    if (!nodeOutputs.get(nodeName).includes(addedName)) {
+                                        nodeOutputs.get(nodeName).push(addedName);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Find downstream node (who consumes outputTensor via renameMap)
+            if (outputTensor) {
+                for (const [destNodeName, renameEntries] of this.renameMap) {
+                    for (const [origName, newName] of renameEntries) {
+                        if (newName === outputTensor) {
+                            if (!nodeOutputs.get(addedName).includes(destNodeName)) {
+                                nodeOutputs.get(addedName).push(destNodeName);
+                            }
+                            if (!nodeInputs.has(destNodeName)) nodeInputs.set(destNodeName, []);
+                            if (!nodeInputs.get(destNodeName).includes(addedName)) {
+                                nodeInputs.get(destNodeName).push(addedName);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // BFS from begin delimiters to find all reachable nodes
+        const reachableFromBegin = new Set();
+        const queue = [...beginDelims];
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (reachableFromBegin.has(current)) continue;
+            reachableFromBegin.add(current);
+            const downstream = nodeOutputs.get(current) || [];
+            for (const next of downstream) {
+                if (!reachableFromBegin.has(next)) {
+                    queue.push(next);
+                }
+            }
+        }
+
+        // BFS backwards from end delimiters to find all nodes that can reach them
+        const canReachEnd = new Set();
+        const queue2 = [...endDelims];
+        while (queue2.length > 0) {
+            const current = queue2.shift();
+            if (canReachEnd.has(current)) continue;
+            canReachEnd.add(current);
+            const upstream = nodeInputs.get(current) || [];
+            for (const prev of upstream) {
+                if (!canReachEnd.has(prev)) {
+                    queue2.push(prev);
+                }
+            }
+        }
+
+        // Scoped ops are those reachable from begin AND can reach end
+        // Exclude the deliminator ops themselves
+        for (const nodeName of reachableFromBegin) {
+            if (canReachEnd.has(nodeName) && !result.deliminatorOps.includes(nodeName)) {
+                result.scopedOps.push(nodeName);
+            }
+        }
+
+        return result;
+    }
+
     // Pattern-based deliminator insertion
     applyPatterns(patterns) {
         let totalDelimitorsAdded = 0;

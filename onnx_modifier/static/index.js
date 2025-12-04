@@ -314,6 +314,7 @@ host.BrowserHost = class {
         // DeliminatorOp context menu handlers
         const deliminatorDeleteBtn = this.document.getElementById('deliminator-delete-btn');
         const deliminatorMoveBtn = this.document.getElementById('deliminator-move-btn');
+        const deliminatorHighlightBtn = this.document.getElementById('deliminator-highlight-btn');
         const deliminatorContextMenu = this.document.getElementById('deliminator-context-menu');
 
         // Delete handler
@@ -351,6 +352,28 @@ host.BrowserHost = class {
                     deliminatorPanel.style.display = 'block';
                     this._enableDeliminatorMode();
                 }, 100);
+            }
+        });
+
+        // Highlight handler - highlight scoped ops
+        deliminatorHighlightBtn.addEventListener('click', () => {
+            const nodeName = deliminatorContextMenu.dataset.nodeName;
+            if (nodeName) {
+                // Get the func_name
+                const attrs = this._view.modifier.getDeliminatorOpAttributes(nodeName);
+                deliminatorContextMenu.style.display = 'none';
+
+                if (attrs && attrs.func_name) {
+                    // Clear previous highlighting
+                    this._clearScopeHighlighting();
+
+                    // Find scoped ops
+                    const result = this._view.modifier.findScopedOps(attrs.func_name);
+
+                    // Highlight the nodes
+                    this._highlightNodes(result.deliminatorOps, 'deliminator-highlight');
+                    this._highlightNodes(result.scopedOps, 'deliminator-scope-highlight');
+                }
             }
         });
 
@@ -1136,6 +1159,29 @@ host.BrowserHost = class {
             }
         });
         return selected;
+    }
+
+    _clearScopeHighlighting() {
+        // Remove highlighting from all previously highlighted nodes
+        const highlighted = this.document.querySelectorAll('.deliminator-scope-highlight, .deliminator-highlight');
+        highlighted.forEach(el => {
+            el.classList.remove('deliminator-scope-highlight');
+            el.classList.remove('deliminator-highlight');
+        });
+    }
+
+    _highlightNodes(nodeNames, className) {
+        // Find and highlight graph nodes by their names
+        if (!nodeNames || nodeNames.length === 0) return;
+
+        // Node IDs are formatted as 'node-name-<nodename>'
+        nodeNames.forEach(nodeName => {
+            const nodeId = 'node-name-' + nodeName;
+            const nodeEl = this.document.getElementById(nodeId);
+            if (nodeEl) {
+                nodeEl.classList.add(className);
+            }
+        });
     }
 };
 

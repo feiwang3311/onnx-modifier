@@ -208,6 +208,21 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 #deliminator-context-menu .menu-item.delete:hover {
     background-color: #ffeeee;
 }
+/* Highlighting for scoped nodes */
+.deliminator-scope-highlight path {
+    stroke: #FF8C00 !important;
+    stroke-width: 3px !important;
+}
+.deliminator-scope-highlight .node-item-type path {
+    fill: #FFD700 !important;
+}
+.deliminator-highlight path {
+    stroke: #00CED1 !important;
+    stroke-width: 3px !important;
+}
+.deliminator-highlight .node-item-type path {
+    fill: #00CED1 !important;
+}
 .graph-op-button-pattern {
     cursor: pointer;
     background-color: white;
@@ -789,6 +804,7 @@ warning_msg::before {
 
 <!-- Context menu for DeliminatorOp nodes -->
 <div id="deliminator-context-menu">
+    <div class="menu-item" id="deliminator-highlight-btn">Highlight Scope</div>
     <div class="menu-item" id="deliminator-move-btn">Move</div>
     <div class="menu-item delete" id="deliminator-delete-btn">Delete</div>
 </div>
