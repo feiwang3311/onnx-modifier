@@ -536,6 +536,35 @@ modifier.Modifier = class {
             }
         }
 
+        // Step 3d: Also update addedNode consumers (e.g., chained delimiters)
+        // These nodes have their inputs stored directly in addedNode, not in renameMap
+        const savedAddedNodeInputChanges = new Map();  // nodeName -> Map(inputKey -> [[oldTensorName, flag]])
+        for (const [nodeName, nodeInfo] of this.addedNode) {
+            if (allNodesToReplace.has(nodeName)) continue;
+            if (!nodeInfo.inputs) continue;
+
+            for (const [inputKey, args] of nodeInfo.inputs) {
+                for (let i = 0; i < args.length; i++) {
+                    const tensorName = args[i][0];
+                    if (outputMapping.has(tensorName)) {
+                        // Save original value for revert
+                        if (!savedAddedNodeInputChanges.has(nodeName)) {
+                            savedAddedNodeInputChanges.set(nodeName, new Map());
+                        }
+                        if (!savedAddedNodeInputChanges.get(nodeName).has(inputKey)) {
+                            // Deep copy the original args array
+                            savedAddedNodeInputChanges.get(nodeName).set(inputKey, args.map(a => [...a]));
+                        }
+
+                        // Update the input to point to Partition output
+                        const partitionOutput = outputMapping.get(tensorName);
+                        console.log('Redirecting addedNode[' + nodeName + '].inputs[' + inputKey + '][' + i + ']: ' + tensorName + ' -> ' + partitionOutput);
+                        args[i][0] = partitionOutput;
+                    }
+                }
+            }
+        }
+
         // Step 4: Remove all highlighted ops
         for (const nodeName of allNodesToReplace) {
             if (this.addedNode.has(nodeName)) {
@@ -550,7 +579,8 @@ modifier.Modifier = class {
             funcName: funcName,
             savedAddedNodes: savedAddedNodes,
             savedDeletedOps: savedDeletedOps,
-            savedRenameMapChanges: savedRenameMapChanges
+            savedRenameMapChanges: savedRenameMapChanges,
+            savedAddedNodeInputChanges: savedAddedNodeInputChanges
         });
 
         // Refresh the view
@@ -582,6 +612,42 @@ modifier.Modifier = class {
             console.log('Restored DeliminatorOp:', nodeName);
         }
 
+        // Step 1b: Update begin delimiter's input to use Partition's current input
+        // This handles the case where the upstream Partition was already expanded
+        const partitionInfo = this.addedNode.get(partitionNodeName);
+        if (partitionInfo && partitionInfo.inputs) {
+            // Get Partition's current input tensor
+            let partitionInputTensor = null;
+            for (const [inputKey, args] of partitionInfo.inputs) {
+                if (args.length > 0) {
+                    partitionInputTensor = args[0][0];
+                    break;
+                }
+            }
+
+            if (partitionInputTensor) {
+                // Find and update the begin delimiter's input
+                for (const [nodeName, savedInfo] of revertInfo.savedAddedNodes) {
+                    const isBegin = savedInfo.attributes.get('is_begin');
+                    if (isBegin && isBegin[0] === '1') {  // is_begin = 1 means begin delimiter
+                        const restoredNodeInfo = this.addedNode.get(nodeName);
+                        if (restoredNodeInfo && restoredNodeInfo.inputs) {
+                            for (const [inputKey, args] of restoredNodeInfo.inputs) {
+                                if (args.length > 0) {
+                                    const oldInput = args[0][0];
+                                    if (oldInput !== partitionInputTensor) {
+                                        console.log('Updating begin delimiter[' + nodeName + '] input: ' + oldInput + ' -> ' + partitionInputTensor);
+                                        args[0][0] = partitionInputTensor;
+                                    }
+                                }
+                            }
+                        }
+                        break;  // Only one begin delimiter per group
+                    }
+                }
+            }
+        }
+
         // Step 2: Restore scoped ops (remove 'Deleted' state)
         for (const nodeName of revertInfo.savedDeletedOps) {
             this.name2NodeStates.delete(nodeName);
@@ -595,6 +661,79 @@ modifier.Modifier = class {
                 for (const [origName, oldNewName] of changes) {
                     renameEntries.set(origName, oldNewName);
                     console.log('Restored renameMap[' + destNodeName + '][' + origName + '] = ' + oldNewName);
+                }
+            }
+        }
+
+        // Step 3b: Restore addedNode input changes (for nodes that still exist)
+        if (revertInfo.savedAddedNodeInputChanges) {
+            for (const [nodeName, inputChanges] of revertInfo.savedAddedNodeInputChanges) {
+                const nodeInfo = this.addedNode.get(nodeName);
+                if (nodeInfo && nodeInfo.inputs) {
+                    for (const [inputKey, originalArgs] of inputChanges) {
+                        nodeInfo.inputs.set(inputKey, originalArgs);
+                        console.log('Restored addedNode[' + nodeName + '].inputs[' + inputKey + ']');
+                    }
+                }
+            }
+        }
+
+        // Step 3c: Find current consumers of Partition output and redirect to end delimiter output
+        // This handles the case where consumers changed after shrinking (e.g., another Partition replaced the original consumer)
+        // Note: partitionInfo was already retrieved at Step 1b
+        if (partitionInfo && partitionInfo.outputs) {
+            // Get the Partition's output tensor name
+            let partitionOutputTensor = null;
+            for (const [outputKey, args] of partitionInfo.outputs) {
+                if (args.length > 0) {
+                    partitionOutputTensor = args[0][0];
+                    break;
+                }
+            }
+
+            if (partitionOutputTensor) {
+                // Find the end delimiter's output tensor from restored nodes
+                let endDelimOutputTensor = null;
+                for (const [nodeName, savedInfo] of revertInfo.savedAddedNodes) {
+                    const isBegin = savedInfo.attributes.get('is_begin');
+                    if (isBegin && isBegin[0] === '0') {  // is_begin = 0 means end delimiter
+                        for (const [outputKey, args] of savedInfo.outputs) {
+                            if (args.length > 0) {
+                                endDelimOutputTensor = args[0][0];
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                if (endDelimOutputTensor) {
+                    console.log('Redirecting consumers from Partition output:', partitionOutputTensor, 'to end delim output:', endDelimOutputTensor);
+
+                    // Update addedNode consumers
+                    for (const [nodeName, nodeInfo] of this.addedNode) {
+                        if (nodeName === partitionNodeName) continue;
+                        if (!nodeInfo.inputs) continue;
+
+                        for (const [inputKey, args] of nodeInfo.inputs) {
+                            for (let i = 0; i < args.length; i++) {
+                                if (args[i][0] === partitionOutputTensor) {
+                                    console.log('Updating addedNode[' + nodeName + '].inputs[' + inputKey + '][' + i + ']: ' + partitionOutputTensor + ' -> ' + endDelimOutputTensor);
+                                    args[i][0] = endDelimOutputTensor;
+                                }
+                            }
+                        }
+                    }
+
+                    // Update renameMap consumers
+                    for (const [destNodeName, renameEntries] of this.renameMap) {
+                        for (const [origName, newName] of renameEntries) {
+                            if (newName === partitionOutputTensor) {
+                                console.log('Updating renameMap[' + destNodeName + '][' + origName + ']: ' + partitionOutputTensor + ' -> ' + endDelimOutputTensor);
+                                renameEntries.set(origName, endDelimOutputTensor);
+                            }
+                        }
+                    }
                 }
             }
         }
