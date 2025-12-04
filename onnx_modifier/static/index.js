@@ -311,6 +311,17 @@ host.BrowserHost = class {
             }
         })
 
+        // DeliminatorOp context menu delete handler
+        const deliminatorDeleteBtn = this.document.getElementById('deliminator-delete-btn');
+        const deliminatorContextMenu = this.document.getElementById('deliminator-context-menu');
+        deliminatorDeleteBtn.addEventListener('click', () => {
+            const nodeName = deliminatorContextMenu.dataset.nodeName;
+            if (nodeName) {
+                this._view.modifier.deleteDeliminatorOp(nodeName);
+                deliminatorContextMenu.style.display = 'none';
+            }
+        });
+
         // Pattern-based deliminator feature
         this._loadedPatterns = [];
         this._patternsLoaded = false;

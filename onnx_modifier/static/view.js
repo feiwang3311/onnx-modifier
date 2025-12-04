@@ -836,6 +836,33 @@ view.View = class {
         }
     }
 
+    showDeliminatorContextMenu(event, modelNodeName) {
+        // Get or create the context menu element
+        let contextMenu = this._host.document.getElementById('deliminator-context-menu');
+        if (!contextMenu) {
+            return;
+        }
+
+        // Position the menu at the mouse location
+        contextMenu.style.display = 'block';
+        contextMenu.style.left = event.clientX + 'px';
+        contextMenu.style.top = event.clientY + 'px';
+
+        // Store the node name for the delete action
+        contextMenu.dataset.nodeName = modelNodeName;
+
+        // Close menu when clicking elsewhere
+        const closeMenu = (e) => {
+            if (!contextMenu.contains(e.target)) {
+                contextMenu.style.display = 'none';
+                this._host.document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => {
+            this._host.document.addEventListener('click', closeMenu);
+        }, 0);
+    }
+
     showDocumentation(type) {
         if (type && (type.description || type.inputs || type.outputs || type.attributes)) {
             if (type.nodes && type.nodes.length > 0) {
@@ -1077,6 +1104,12 @@ view.Node = class extends grapher.Node {
         const tooltip = this.context.view.options.names && (node.name || node.location) ? type.name : (node.name || node.location);
         const title = header.add(null, styles, content, tooltip);
         title.on('click', () => this.context.view.showNodeProperties(node, null, this.modelNodeName));
+        // Add right-click context menu for DeliminatorOp nodes
+        if (type.name === 'DeliminatorOp') {
+            title.on('contextmenu', (entry, event) => {
+                this.context.view.showDeliminatorContextMenu(event, this.modelNodeName);
+            });
+        }
         if (node.type.nodes && node.type.nodes.length > 0) {
             const definition = header.add(null, styles, '\u0192', 'Show Function Definition');
             definition.on('click', () => this.context.view.pushGraph(node.type));

@@ -468,6 +468,12 @@ grapher.Node.Header.Entry = class {
         if (this.events.click) {
             this.element.addEventListener('click', () => this.raise('click'));
         }
+        if (this.events.contextmenu) {
+            this.element.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this.raise('contextmenu', e);
+            });
+        }
         if (this.tooltip) {
             const titleElement = document.createElementNS('http://www.w3.org/2000/svg', 'title');
             titleElement.textContent = this.tooltip;

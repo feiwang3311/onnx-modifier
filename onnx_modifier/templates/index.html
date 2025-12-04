@@ -181,6 +181,31 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .edge-path.deliminator-mode:hover {
     stroke: #FF6600 !important;
 }
+#deliminator-context-menu {
+    display: none;
+    position: fixed;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    z-index: 1000;
+    min-width: 120px;
+}
+#deliminator-context-menu .menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-family: "Oliviar Sans Light";
+    font-size: 13px;
+}
+#deliminator-context-menu .menu-item:hover {
+    background-color: #f0f0f0;
+}
+#deliminator-context-menu .menu-item.delete {
+    color: #cc0000;
+}
+#deliminator-context-menu .menu-item.delete:hover {
+    background-color: #ffeeee;
+}
 .graph-op-button-pattern {
     cursor: pointer;
     background-color: white;
@@ -759,6 +784,11 @@ warning_msg::before {
         <button id="confirm-enable" data-value="Confirm">Confirm</button>
     </div>
 </dialog>
+
+<!-- Context menu for DeliminatorOp nodes -->
+<div id="deliminator-context-menu">
+    <div class="menu-item delete" id="deliminator-delete-btn">Delete</div>
+</div>
 
 </body>
 </html>

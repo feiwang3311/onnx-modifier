@@ -172,6 +172,42 @@ modifier.Modifier = class {
         this.applyAndUpdateView();
     }
 
+    // Delete a DeliminatorOp and reconnect its input to its output consumers
+    deleteDeliminatorOp(nodeName) {
+        // Get the node info
+        const nodeInfo = this.addedNode.get(nodeName);
+        if (!nodeInfo) {
+            console.error('DeliminatorOp not found:', nodeName);
+            return false;
+        }
+
+        // Get the output tensor name (what this DeliminatorOp produces)
+        const deliminatorOutputName = nodeName + '_output';
+
+        // Find and remove the rename mapping that uses this output
+        // The renameMap maps: destNodeName -> Map(originalTensorName -> newTensorName)
+        // We need to find entries where newTensorName === deliminatorOutputName
+        for (const [destNodeName, renameEntries] of this.renameMap) {
+            for (const [origTensorName, newTensorName] of renameEntries) {
+                if (newTensorName === deliminatorOutputName) {
+                    renameEntries.delete(origTensorName);
+                    // If the map is now empty, remove the dest node entry
+                    if (renameEntries.size === 0) {
+                        this.renameMap.delete(destNodeName);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Remove the node from addedNode
+        this.addedNode.delete(nodeName);
+
+        // Refresh the view
+        this.applyAndUpdateView();
+        return true;
+    }
+
     // Pattern-based deliminator insertion
     applyPatterns(patterns) {
         let totalDelimitorsAdded = 0;
@@ -867,30 +903,41 @@ modifier.Modifier = class {
     refreshNodeArguments() {
         if(!this.graph)return;
         for (var node of this.graph._nodes) {
-            // if (this.modifier.renameMap.get(node.modelNodeName)) {
-            if (this.renameMap.get(node.modelNodeName)) {
+            const nodeRenameMap = this.renameMap.get(node.modelNodeName);
 
-                // check inputs
-                for (var input of node.inputs) {
-                    for (const [index, element] of input.arguments.entries()) {
-                        if (this.renameMap.get(node.modelNodeName).get(element.original_name)) {
-                            var new_name = this.renameMap.get(node.modelNodeName).get(element.original_name);
-                            var arg_with_new_name = this.graph._context.argument(new_name, element.original_name);
-
+            // check inputs
+            for (var input of node.inputs) {
+                for (const [index, element] of input.arguments.entries()) {
+                    const origName = element.original_name;
+                    if (origName) {
+                        const newName = nodeRenameMap ? nodeRenameMap.get(origName) : null;
+                        if (newName) {
+                            // Apply rename mapping
+                            var arg_with_new_name = this.graph._context.argument(newName, origName);
                             input.arguments[index] = arg_with_new_name;
+                        } else if (element.name !== origName) {
+                            // No mapping but name was changed - restore to original
+                            var arg_with_orig_name = this.graph._context.argument(origName, origName);
+                            input.arguments[index] = arg_with_orig_name;
                         }
                     }
                 }
+            }
 
-                // check outputs
-                for (var output of node.outputs) {
-                    for (const [index, element] of output.arguments.entries()) {
-                        if (this.renameMap.get(node.modelNodeName).get(element.original_name)) {
-                            var new_name = this.renameMap.get(node.modelNodeName).get(element.original_name);
-                            // console.log(new_name)
-                            var arg_with_new_name = this.graph._context.argument(new_name, element.original_name);
-
+            // check outputs
+            for (var output of node.outputs) {
+                for (const [index, element] of output.arguments.entries()) {
+                    const origName = element.original_name;
+                    if (origName) {
+                        const newName = nodeRenameMap ? nodeRenameMap.get(origName) : null;
+                        if (newName) {
+                            // Apply rename mapping
+                            var arg_with_new_name = this.graph._context.argument(newName, origName);
                             output.arguments[index] = arg_with_new_name;
+                        } else if (element.name !== origName) {
+                            // No mapping but name was changed - restore to original
+                            var arg_with_orig_name = this.graph._context.argument(origName, origName);
+                            output.arguments[index] = arg_with_orig_name;
                         }
                     }
                 }
