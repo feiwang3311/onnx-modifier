@@ -183,6 +183,141 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
     stroke: #FF6600 !important;
     stroke-width: 10px !important;
 }
+.graph-op-button-pattern {
+    cursor: pointer;
+    background-color: white;
+    border: 1px solid grey;
+    border-radius: 3px;
+    color: black;
+    font-family:"Oliviar Sans Light";
+    font-size: 20px;
+    position:absolute;
+    left: 2px;
+    top: 205px;
+}
+.graph-op-button-pattern:active {  background: #e7e7e7; }
+.graph-op-button-pattern.active {  background: #87CEEB; border-color: #4169E1; }
+.pattern-panel {
+    position: absolute;
+    left: 2px;
+    top: 240px;
+    background-color: white;
+    border: 1px solid grey;
+    border-radius: 5px;
+    padding: 10px;
+    font-family: "Oliviar Sans Light";
+    font-size: 12px;
+    z-index: 100;
+    min-width: 250px;
+    max-width: 350px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+.pattern-panel-title {
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 5px;
+}
+.pattern-panel-row {
+    margin: 5px 0;
+}
+.pattern-panel-row label {
+    display: block;
+    font-size: 11px;
+    margin-bottom: 3px;
+}
+.pattern-panel-row input[type="file"] {
+    font-size: 10px;
+    width: 100%;
+}
+.pattern-list {
+    margin: 10px 0;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    padding: 5px;
+}
+.pattern-list-empty {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 10px;
+}
+.pattern-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 5px;
+    border-bottom: 1px solid #eee;
+}
+.pattern-item:last-child {
+    border-bottom: none;
+}
+.pattern-item input[type="checkbox"] {
+    margin-right: 8px;
+    margin-top: 2px;
+}
+.pattern-item-info {
+    flex: 1;
+}
+.pattern-item-name {
+    font-weight: bold;
+    font-size: 12px;
+}
+.pattern-item-type {
+    font-size: 10px;
+    color: #666;
+}
+.pattern-item-ops {
+    font-size: 10px;
+    color: #888;
+    margin-top: 2px;
+}
+.pattern-panel-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.pattern-panel-actions button {
+    flex: 1;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    background: #f5f5f5;
+}
+.pattern-panel-actions button:hover:not(:disabled) {
+    background: #e0e0e0;
+}
+.pattern-panel-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.pattern-panel-actions button#pattern-apply {
+    background: #4CAF50;
+    color: white;
+    border-color: #45a049;
+}
+.pattern-panel-actions button#pattern-apply:hover:not(:disabled) {
+    background: #45a049;
+}
+.pattern-results {
+    margin-top: 10px;
+    font-size: 11px;
+    padding: 5px;
+    border-radius: 3px;
+}
+.pattern-results.success {
+    background: #d4edda;
+    color: #155724;
+}
+.pattern-results.error {
+    background: #f8d7da;
+    color: #721c24;
+}
 .graph-op-add-node-dropdown {
     font-size: 15px;
     position:absolute;
@@ -526,6 +661,22 @@ warning_msg::before {
             <input type="text" id="deliminator-scheduling-config" placeholder="config">
         </div>
         <div class="deliminator-panel-hint">Click on an edge to insert DeliminatorOp</div>
+    </div>
+
+    <button id="pattern-mode-toggle" class="graph-op-button-pattern">Pattern Match</button>
+    <div id="pattern-panel" class="pattern-panel" style="display: none;">
+        <div class="pattern-panel-title">Pattern-based Deliminator</div>
+        <div id="pattern-list" class="pattern-list">
+            <div class="pattern-list-empty">Loading patterns...</div>
+        </div>
+        <div class="pattern-panel-actions">
+            <button id="pattern-select-all">Select All</button>
+            <button id="pattern-deselect-all">Deselect All</button>
+        </div>
+        <div class="pattern-panel-actions">
+            <button id="pattern-apply" disabled>Apply Patterns</button>
+        </div>
+        <div id="pattern-results" class="pattern-results"></div>
     </div>
 
     <button id="back-button" class="toolbar-back-button" title="Back">

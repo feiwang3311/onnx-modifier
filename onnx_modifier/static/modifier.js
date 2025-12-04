@@ -172,6 +172,377 @@ modifier.Modifier = class {
         this.applyAndUpdateView();
     }
 
+    // Pattern-based deliminator insertion
+    applyPatterns(patterns) {
+        let totalDelimitorsAdded = 0;
+        let totalMatches = 0;
+
+        for (const pattern of patterns) {
+            let matches = [];
+            if (pattern.type === 'sequence') {
+                matches = this.findSequenceMatches(pattern);
+            } else if (pattern.type === 'dag') {
+                matches = this.findDagMatches(pattern);
+            }
+
+            // Add deliminators for each match
+            matches.forEach((match, index) => {
+                const funcName = matches.length > 1 ? `${pattern.name}_${index}` : pattern.name;
+                const delimitorsAdded = this.addDelimitorsToMatch(match, pattern.scheduling_config, funcName);
+                totalDelimitorsAdded += delimitorsAdded;
+            });
+
+            totalMatches += matches.length;
+        }
+
+        if (totalDelimitorsAdded > 0) {
+            this.applyAndUpdateView();
+        }
+
+        return { total: totalDelimitorsAdded, matches: totalMatches };
+    }
+
+    // Find sequence pattern matches in the graph
+    findSequenceMatches(pattern) {
+        const matches = [];
+        const ops = pattern.ops;
+        const nodes = this.getNodeList();
+
+        // Helper to get the op type string from a node
+        const getNodeType = (node) => {
+            if (typeof node.type === 'string') return node.type;
+            if (node.type && node.type.name) return node.type.name;
+            if (node.op_type) return node.op_type;
+            return null;
+        };
+
+        // Build adjacency info
+        const nodeOutputs = new Map();
+        const tensorToConsumer = new Map();
+
+        for (const node of nodes) {
+            const nodeName = node.name;
+            const outputs = [];
+            if (node.outputs) {
+                for (const output of node.outputs) {
+                    for (const arg of output.arguments) {
+                        outputs.push(arg.name);
+                    }
+                }
+            }
+            nodeOutputs.set(nodeName, outputs);
+
+            if (node.inputs) {
+                for (const input of node.inputs) {
+                    for (const arg of input.arguments) {
+                        if (!tensorToConsumer.has(arg.name)) {
+                            tensorToConsumer.set(arg.name, []);
+                        }
+                        tensorToConsumer.get(arg.name).push(nodeName);
+                    }
+                }
+            }
+        }
+
+        const getSuccessors = (nodeName) => {
+            const successors = [];
+            const outputs = nodeOutputs.get(nodeName) || [];
+            for (const tensor of outputs) {
+                const consumers = tensorToConsumer.get(tensor) || [];
+                successors.push(...consumers);
+            }
+            return [...new Set(successors)];
+        };
+
+        const matchesOp = (node, opPattern) => {
+            const nodeType = getNodeType(node);
+            if (!nodeType) return false;
+            const nodeTypeLower = nodeType.toLowerCase();
+
+            let result = false;
+            if (typeof opPattern === 'string') {
+                result = nodeTypeLower === opPattern.toLowerCase();
+            } else if (Array.isArray(opPattern)) {
+                result = opPattern.some(op => nodeTypeLower === op.toLowerCase());
+            } else if (opPattern.op) {
+                const opList = Array.isArray(opPattern.op) ? opPattern.op : [opPattern.op];
+                result = opList.some(op => nodeTypeLower === op.toLowerCase());
+            }
+            return result;
+        };
+
+        const isOptional = (opPattern) => {
+            return typeof opPattern === 'object' && opPattern.optional === true;
+        };
+
+        const tryMatch = (startNode, opIndex, currentMatch) => {
+            if (opIndex >= ops.length) return [currentMatch.slice()];
+
+            const opPattern = ops[opIndex];
+
+            if (matchesOp(startNode, opPattern)) {
+                currentMatch.push(startNode);
+                const successors = getSuccessors(startNode.name);
+
+                if (opIndex === ops.length - 1) {
+                    const result = [currentMatch.slice()];
+                    currentMatch.pop();
+                    return result;
+                }
+
+                const results = [];
+                for (const succName of successors) {
+                    const succNode = nodes.find(n => n.name === succName);
+                    if (succNode) results.push(...tryMatch(succNode, opIndex + 1, currentMatch));
+                }
+                currentMatch.pop();
+                return results;
+            } else if (isOptional(opPattern)) {
+                return tryMatch(startNode, opIndex + 1, currentMatch);
+            }
+            return [];
+        };
+
+        const usedNodes = new Set();
+        for (const node of nodes) {
+            if (usedNodes.has(node.name)) continue;
+            const nodeMatches = tryMatch(node, 0, []);
+            for (const match of nodeMatches) {
+                const matchNodeNames = match.map(n => n.name);
+                if (!matchNodeNames.some(name => usedNodes.has(name))) {
+                    matches.push(match);
+                    matchNodeNames.forEach(name => usedNodes.add(name));
+                }
+            }
+        }
+        return matches;
+    }
+
+    // Find DAG pattern matches
+    findDagMatches(pattern) {
+        const matches = [];
+        const nodes = this.getNodeList();
+        const patternNodes = pattern.nodes;
+        const patternEdges = pattern.edges;
+
+        const nodeOutputs = new Map();
+        const tensorToConsumer = new Map();
+
+        for (const node of nodes) {
+            const outputs = [];
+            if (node.outputs) {
+                for (const output of node.outputs) {
+                    for (const arg of output.arguments) {
+                        outputs.push(arg.name);
+                    }
+                }
+            }
+            nodeOutputs.set(node.name, outputs);
+
+            if (node.inputs) {
+                for (const input of node.inputs) {
+                    for (const arg of input.arguments) {
+                        if (!tensorToConsumer.has(arg.name)) {
+                            tensorToConsumer.set(arg.name, []);
+                        }
+                        tensorToConsumer.get(arg.name).push(node.name);
+                    }
+                }
+            }
+        }
+
+        const matchesType = (graphNode, patternType) => {
+            if (typeof patternType === 'string') return graphNode.type === patternType;
+            if (Array.isArray(patternType)) return patternType.includes(graphNode.type);
+            return false;
+        };
+
+        const hasEdge = (n1Name, n2Name) => {
+            const outputs = nodeOutputs.get(n1Name) || [];
+            for (const tensor of outputs) {
+                const consumers = tensorToConsumer.get(tensor) || [];
+                if (consumers.includes(n2Name)) return true;
+            }
+            return false;
+        };
+
+        const patternNodeIds = Object.keys(patternNodes);
+
+        const tryAssignment = (assignment, patternIndex) => {
+            if (patternIndex >= patternNodeIds.length) {
+                for (const [from, to] of patternEdges) {
+                    if (!hasEdge(assignment[from], assignment[to])) return [];
+                }
+                return [Object.assign({}, assignment)];
+            }
+
+            const patternNodeId = patternNodeIds[patternIndex];
+            const patternType = patternNodes[patternNodeId];
+            const results = [];
+
+            for (const graphNode of nodes) {
+                if (Object.values(assignment).includes(graphNode.name)) continue;
+                if (matchesType(graphNode, patternType)) {
+                    assignment[patternNodeId] = graphNode.name;
+                    results.push(...tryAssignment(assignment, patternIndex + 1));
+                    delete assignment[patternNodeId];
+                }
+            }
+            return results;
+        };
+
+        const assignments = tryAssignment({}, 0);
+        const usedNodes = new Set();
+
+        for (const assignment of assignments) {
+            const nodeNames = Object.values(assignment);
+            if (!nodeNames.some(name => usedNodes.has(name))) {
+                const matchNodes = nodeNames.map(name => nodes.find(n => n.name === name));
+                matches.push({ nodes: matchNodes, assignment: assignment, pattern: pattern });
+                nodeNames.forEach(name => usedNodes.add(name));
+            }
+        }
+        return matches;
+    }
+
+    getNodeList() {
+        const nodes = [];
+        for (const [name, node] of this.name2ModelNode) {
+            if (this.name2NodeStates.get(name) === 'Exist') nodes.push(node);
+        }
+        return nodes;
+    }
+
+    addDelimitorsToMatch(match, schedulingConfig, funcName) {
+        let added = 0;
+        let matchNodes, inputNodes, outputNodes;
+
+        if (Array.isArray(match)) {
+            matchNodes = match;
+            inputNodes = [match[0]];
+            outputNodes = [match[match.length - 1]];
+        } else {
+            matchNodes = match.nodes;
+            const pattern = match.pattern;
+            inputNodes = (pattern.inputs || []).map(id => {
+                const nodeName = match.assignment[id];
+                return matchNodes.find(n => n.name === nodeName);
+            }).filter(n => n);
+            outputNodes = (pattern.outputs || []).map(id => {
+                const nodeName = match.assignment[id];
+                return matchNodes.find(n => n.name === nodeName);
+            }).filter(n => n);
+        }
+
+        const matchNodeNames = new Set(matchNodes.map(n => n.name));
+
+        // Add is_begin=true deliminators on entry edges
+        for (const node of inputNodes) {
+            if (node.inputs) {
+                for (const input of node.inputs) {
+                    for (const arg of input.arguments) {
+                        const tensorName = arg.name;
+                        const producerNode = this.findTensorProducer(tensorName);
+                        if (!producerNode || !matchNodeNames.has(producerNode)) {
+                            this.addDeliminatorForPatternEdge(tensorName, node.name, funcName, schedulingConfig, true);
+                            added++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add is_begin=false deliminators on exit edges
+        for (const node of outputNodes) {
+            if (node.outputs) {
+                for (const output of node.outputs) {
+                    for (const arg of output.arguments) {
+                        const tensorName = arg.name;
+                        const consumers = this.findTensorConsumers(tensorName);
+                        for (const consumer of consumers) {
+                            if (!matchNodeNames.has(consumer)) {
+                                this.addDeliminatorForPatternEdge(tensorName, consumer, funcName, schedulingConfig, false);
+                                added++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return added;
+    }
+
+    findTensorProducer(tensorName) {
+        for (const [nodeName, node] of this.name2ModelNode) {
+            if (this.name2NodeStates.get(nodeName) !== 'Exist') continue;
+            if (node.outputs) {
+                for (const output of node.outputs) {
+                    for (const arg of output.arguments) {
+                        if (arg.name === tensorName) return nodeName;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    findTensorConsumers(tensorName) {
+        const consumers = [];
+        for (const [nodeName, node] of this.name2ModelNode) {
+            if (this.name2NodeStates.get(nodeName) !== 'Exist') continue;
+            if (node.inputs) {
+                for (const input of node.inputs) {
+                    for (const arg of input.arguments) {
+                        if (arg.name === tensorName) consumers.push(nodeName);
+                    }
+                }
+            }
+        }
+        return consumers;
+    }
+
+    addDeliminatorForPatternEdge(tensorName, toNodeName, funcName, schedulingConfig, isBegin) {
+        var modelNodeName = this.try_get_node_name('DeliminatorOp');
+        var properties = new Map();
+        properties.set('domain', 'custom');
+        properties.set('op_type', 'DeliminatorOp');
+        properties.set('name', modelNodeName);
+
+        var nodeAttributes = new Map();
+        nodeAttributes.set('is_begin', [isBegin ? '1' : '0', 'int64']);
+        nodeAttributes.set('func_name', [funcName, 'string']);
+        nodeAttributes.set('scheduling_config', [schedulingConfig, 'string']);
+
+        var deliminatorOutputName = modelNodeName + '_output';
+        var inputs = new Map();
+        inputs.set('X', [[tensorName, false]]);
+        var outputs = new Map();
+        outputs.set('Y', [[deliminatorOutputName, false]]);
+
+        var nodeInfo = new view.LightNodeInfo(properties, nodeAttributes, inputs, outputs);
+        this.addedNode.set(modelNodeName, nodeInfo);
+
+        var destNode = this.name2ModelNode.get(toNodeName);
+        if (destNode && destNode.inputs) {
+            for (var input of destNode.inputs) {
+                var found = false;
+                for (var i = 0; i < input.arguments.length; i++) {
+                    var arg = input.arguments[i];
+                    if (arg.name === tensorName || arg.original_name === tensorName) {
+                        var orig_arg_name = arg.original_name || arg.name;
+                        if (!this.renameMap.get(toNodeName)) {
+                            this.renameMap.set(toNodeName, new Map());
+                        }
+                        this.renameMap.get(toNodeName).set(orig_arg_name, deliminatorOutputName);
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+        }
+    }
+
     addModelOutput(node_name) {
         var modelNode = this.name2ModelNode.get(node_name);
         // use a output argument as a proxy

@@ -311,6 +311,66 @@ host.BrowserHost = class {
             }
         })
 
+        // Pattern-based deliminator feature
+        this._loadedPatterns = [];
+        this._patternsLoaded = false;
+        const patternToggle = this.document.getElementById('pattern-mode-toggle');
+        const patternPanel = this.document.getElementById('pattern-panel');
+        const patternList = this.document.getElementById('pattern-list');
+        const patternSelectAll = this.document.getElementById('pattern-select-all');
+        const patternDeselectAll = this.document.getElementById('pattern-deselect-all');
+        const patternApply = this.document.getElementById('pattern-apply');
+        const patternResults = this.document.getElementById('pattern-results');
+
+        // Load patterns from static file
+        this._loadPatternsFromFile = () => {
+            if (this._patternsLoaded) return;
+            fetch('/static/sample_patterns.json')
+                .then(response => response.json())
+                .then(data => {
+                    this._loadedPatterns = data.patterns || [];
+                    this._patternsLoaded = true;
+                    this._renderPatternList(patternList, patternApply);
+                })
+                .catch(err => {
+                    patternList.innerHTML = '<div class="pattern-list-empty">Error loading patterns</div>';
+                });
+        };
+
+        patternToggle.addEventListener('click', () => {
+            const isActive = patternToggle.classList.toggle('active');
+            patternPanel.style.display = isActive ? 'block' : 'none';
+            if (isActive) {
+                this._loadPatternsFromFile();
+            }
+        });
+
+        patternSelectAll.addEventListener('click', () => {
+            const checkboxes = patternList.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => { cb.checked = true; });
+            this._updatePatternApplyButton(patternApply);
+        });
+
+        patternDeselectAll.addEventListener('click', () => {
+            const checkboxes = patternList.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => { cb.checked = false; });
+            this._updatePatternApplyButton(patternApply);
+        });
+
+        patternApply.addEventListener('click', () => {
+            const selectedPatterns = this._getSelectedPatterns();
+            if (selectedPatterns.length > 0) {
+                const result = this._view.modifier.applyPatterns(selectedPatterns);
+                if (result.total > 0) {
+                    patternResults.textContent = `Added ${result.total} DeliminatorOps for ${result.matches} pattern matches`;
+                    patternResults.className = 'pattern-results success';
+                } else {
+                    patternResults.textContent = 'No matching patterns found in the graph';
+                    patternResults.className = 'pattern-results error';
+                }
+            }
+        })
+
         this.document.getElementById('version').innerText = this.version;
 
         if (this._meta.file) {
@@ -957,6 +1017,82 @@ host.BrowserHost = class {
             this._disableDeliminatorMode();
             this._enableDeliminatorMode();
         }, 100);
+    }
+
+    _renderPatternList(patternList, patternApply) {
+        if (this._loadedPatterns.length === 0) {
+            patternList.innerHTML = '<div class="pattern-list-empty">No patterns loaded</div>';
+            return;
+        }
+
+        patternList.innerHTML = '';
+        this._loadedPatterns.forEach((pattern, index) => {
+            const item = this.document.createElement('div');
+            item.className = 'pattern-item';
+
+            const checkbox = this.document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = 'pattern-' + index;
+            checkbox.dataset.index = index;
+            checkbox.addEventListener('change', () => this._updatePatternApplyButton(patternApply));
+
+            const info = this.document.createElement('div');
+            info.className = 'pattern-item-info';
+
+            const name = this.document.createElement('div');
+            name.className = 'pattern-item-name';
+            name.textContent = pattern.name;
+
+            const type = this.document.createElement('div');
+            type.className = 'pattern-item-type';
+            type.textContent = pattern.type + ' | ' + pattern.scheduling_config;
+
+            const ops = this.document.createElement('div');
+            ops.className = 'pattern-item-ops';
+            if (pattern.type === 'sequence') {
+                ops.textContent = this._formatSequenceOps(pattern.ops);
+            } else if (pattern.type === 'dag') {
+                ops.textContent = Object.values(pattern.nodes).join(' → ');
+            }
+
+            info.appendChild(name);
+            info.appendChild(type);
+            info.appendChild(ops);
+
+            item.appendChild(checkbox);
+            item.appendChild(info);
+            patternList.appendChild(item);
+        });
+    }
+
+    _formatSequenceOps(ops) {
+        return ops.map(op => {
+            if (typeof op === 'string') return op;
+            if (op.op) {
+                const opStr = Array.isArray(op.op) ? op.op.join('|') : op.op;
+                return op.optional ? '(' + opStr + ')?' : opStr;
+            }
+            if (Array.isArray(op)) return op.join('|');
+            return String(op);
+        }).join(' → ');
+    }
+
+    _updatePatternApplyButton(patternApply) {
+        const checkboxes = this.document.querySelectorAll('#pattern-list input[type="checkbox"]');
+        const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+        patternApply.disabled = !anyChecked;
+    }
+
+    _getSelectedPatterns() {
+        const selected = [];
+        const checkboxes = this.document.querySelectorAll('#pattern-list input[type="checkbox"]:checked');
+        checkboxes.forEach(cb => {
+            const index = parseInt(cb.dataset.index);
+            if (this._loadedPatterns[index]) {
+                selected.push(this._loadedPatterns[index]);
+            }
+        });
+        return selected;
     }
 };
 

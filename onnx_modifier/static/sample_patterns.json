@@ -1,0 +1,44 @@
+{
+  "patterns": [
+    {
+      "name": "conv_bn_relu",
+      "type": "sequence",
+      "ops": ["Conv", {"op": ["BatchNormalization"], "optional": true}, {"op": ["Relu", "LeakyRelu"]}],
+      "scheduling_config": "gpu_fused"
+    },
+    {
+      "name": "conv_relu",
+      "type": "sequence",
+      "ops": ["Conv", {"op": ["Relu", "LeakyRelu", "PRelu"]}],
+      "scheduling_config": "conv_activation"
+    },
+    {
+      "name": "matmul_add",
+      "type": "sequence",
+      "ops": ["MatMul", "Add"],
+      "scheduling_config": "gemm_bias"
+    },
+    {
+      "name": "residual_block",
+      "type": "dag",
+      "nodes": {
+        "conv1": "Conv",
+        "bn1": "BatchNormalization",
+        "relu": "Relu",
+        "conv2": "Conv",
+        "bn2": "BatchNormalization",
+        "add": "Add"
+      },
+      "edges": [
+        ["conv1", "bn1"],
+        ["bn1", "relu"],
+        ["relu", "conv2"],
+        ["conv2", "bn2"],
+        ["bn2", "add"]
+      ],
+      "inputs": ["conv1", "add"],
+      "outputs": ["add"],
+      "scheduling_config": "residual_fused"
+    }
+  ]
+}
